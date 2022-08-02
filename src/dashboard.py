@@ -1547,7 +1547,11 @@ def download_external(config_name):
     peer_name = request.args.get('username')
     config = get_dashboard_conf()
     sort = config.get("Server", "dashboard_sort")
-    peer_id = get_peers(config_name, peer_name, sort)[0]['id']
+    peers = get_peers(config_name, peer_name, sort)
+    if len(peers) == 1:
+        peer_id = peers[0]['id']
+    else:
+        return jsonify({"status": False, "filename": "", "content": ""})
     get_peer = g.cur.execute(
         "SELECT private_key, allowed_ip, DNS, mtu, endpoint_allowed_ip, keepalive, preshared_key, name FROM "
         + config_name + " WHERE id = ?", (peer_id,)).fetchall()
