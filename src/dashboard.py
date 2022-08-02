@@ -510,6 +510,23 @@ def get_conf_list():
     return conf
 
 
+# Generate private key
+def gen_private_key():
+    gen = subprocess.check_output('wg genkey > private_key.txt && wg pubkey < private_key.txt > public_key.txt',
+                                  shell=True)
+    print(gen)
+    private = open('private_key.txt')
+    private_key = private.readline().strip()
+    public = open('public_key.txt')
+    public_key = public.readline().strip()
+    data = {"private_key": private_key, "public_key": public_key}
+    private.close()
+    public.close()
+    os.remove('private_key.txt')
+    os.remove('public_key.txt')
+    return data
+
+
 def gen_public_key(private_key):
     """Generate the public key.
 
@@ -1201,6 +1218,40 @@ def add_peer(config_name):
         return exc.output.strip()
 
 
+# api add_peer route for borda
+@app.route('/external/add_peer/<config_name>', methods=['POST'])
+def add_peer_external(config_name):
+    """
+    Add Peers
+    @param config_name: configuration name
+    @return: string
+    """
+    data = request.get_json()
+    key_pair = gen_private_key()
+    public_key = key_pair['public_key']
+    allowed_ips = f_available_ips(config_name)[0]#
+    keys = get_conf_peer_key(config_name)
+    if not isinstance(keys, list):
+        return config_name + " is not running."
+    if public_key in keys:
+        return "Public key already exist."
+    check_dup_ip = g.cur.execute(
+        "SELECT COUNT(*) FROM " + config_name + " WHERE allowed_ip LIKE '" + allowed_ips + "/%'", ) \
+        .fetchone()
+    if check_dup_ip[0] != 0:
+        return "Allowed IP already taken by another peer."
+    try:
+        status = subprocess.check_output(f"wg set {config_name} peer {public_key} allowed-ips {allowed_ips}",
+                                             shell=True, stderr=subprocess.STDOUT)
+        status = subprocess.check_output("wg-quick save " + config_name, shell=True, stderr=subprocess.STDOUT)
+        get_all_peers_data(config_name)
+        sql = "UPDATE " + config_name + " SET name = ?, private_key = ? WHERE id = ?"
+        g.cur.execute(sql, (data['username'], key_pair['private_key'], public_key))
+        return "true"
+    except subprocess.CalledProcessError as exc:
+        return exc.output.strip()
+
+
 @app.route('/remove_peer/<config_name>', methods=['POST'])
 def remove_peer(config_name):
     """
@@ -1440,6 +1491,63 @@ def download(config_name):
     @return: JSON object
     """
     peer_id = request.args.get('id')
+    get_peer = g.cur.execute(
+        "SELECT private_key, allowed_ip, DNS, mtu, endpoint_allowed_ip, keepalive, preshared_key, name FROM "
+        + config_name + " WHERE id = ?", (peer_id,)).fetchall()
+    config = get_dashboard_conf()
+    if len(get_peer) == 1:
+        peer = get_peer[0]
+        if peer[0] != "":
+            public_key = get_conf_pub_key(config_name)
+            listen_port = get_conf_listen_port(config_name)
+            endpoint = config.get("Peers", "remote_endpoint") + ":" + listen_port
+            private_key = peer[0]
+            allowed_ip = peer[1]
+            dns_addresses = peer[2]
+            mtu_value = peer[3]
+            endpoint_allowed_ip = peer[4]
+            keepalive = peer[5]
+            preshared_key = peer[6]
+            filename = peer[7]
+            if len(filename) == 0:
+                filename = "Untitled_Peer"
+            else:
+                filename = peer[7]
+                # Clean filename
+                illegal_filename = [".", ",", "/", "?", "<", ">", "\\", ":", "*", '|' '\"', "com1", "com2", "com3",
+                                    "com4", "com5", "com6", "com7", "com8", "com9", "lpt1", "lpt2", "lpt3", "lpt4",
+                                    "lpt5", "lpt6", "lpt7", "lpt8", "lpt9", "con", "nul", "prn"]
+                for i in illegal_filename:
+                    filename = filename.replace(i, "")
+                if len(filename) == 0:
+                    filename = "Untitled_Peer"
+                filename = "".join(filename.split(' '))
+            filename = filename + "_" + config_name
+            psk = ""
+            if preshared_key != "":
+                psk = "\nPresharedKey = " + preshared_key
+
+            return_data = "[Interface]\nPrivateKey = " + private_key + "\nAddress = " + allowed_ip + "\nDNS = " + \
+                          dns_addresses + "\nMTU = " + str(mtu_value) + "\n\n[Peer]\nPublicKey = " + \
+                          public_key + "\nAllowedIPs = " + endpoint_allowed_ip + "\nEndpoint = " + \
+                          endpoint + "\nPersistentKeepalive = " + str(keepalive) + psk
+
+            return jsonify({"status": True, "filename": f"{filename}.conf", "content": return_data})
+    return jsonify({"status": False, "filename": "", "content": ""})
+
+
+# api download route for borda
+@app.route('/external/download/<config_name>', methods=['GET'])
+def download_external(config_name):
+    """
+    Download one configuration
+    @param config_name: Configuration name
+    @return: JSON object
+    """
+    peer_name = request.args.get('username')
+    config = get_dashboard_conf()
+    sort = config.get("Server", "dashboard_sort")
+    peer_id = get_peers(config_name, peer_name, sort)[0]['id']
     get_peer = g.cur.execute(
         "SELECT private_key, allowed_ip, DNS, mtu, endpoint_allowed_ip, keepalive, preshared_key, name FROM "
         + config_name + " WHERE id = ?", (peer_id,)).fetchall()
