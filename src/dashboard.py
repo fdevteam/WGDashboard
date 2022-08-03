@@ -1246,7 +1246,7 @@ def add_peer_external(config_name):
         status = subprocess.check_output("wg-quick save " + config_name, shell=True, stderr=subprocess.STDOUT)
         get_all_peers_data(config_name)
         sql = "UPDATE " + config_name + " SET name = ?, private_key = ? WHERE id = ?"
-        g.cur.execute(sql, (data['username'], key_pair['private_key'], public_key))
+        g.cur.execute(sql, ("user_" + data['username'], key_pair['private_key'], public_key))
         return "true"
     except subprocess.CalledProcessError as exc:
         return exc.output.strip()
@@ -1547,14 +1547,15 @@ def download_external(config_name):
     peer_name = request.args.get('username')
     config = get_dashboard_conf()
     sort = config.get("Server", "dashboard_sort")
-    peers = get_peers(config_name, peer_name, sort)
-    if len(peers) == 1:
-        peer_id = peers[0]['id']
-    else:
-        return jsonify({"status": False, "filename": "", "content": ""})
+    #peers = get_peers(config_name, peer_name, sort)
+    #if len(peers) == 1:
+    #    peer_id = peers[0]['id']
+    #else:
+    #    return jsonify({"status": False, "filename": "", "content": ""})
     get_peer = g.cur.execute(
         "SELECT private_key, allowed_ip, DNS, mtu, endpoint_allowed_ip, keepalive, preshared_key, name FROM "
-        + config_name + " WHERE id = ?", (peer_id,)).fetchall()
+    #    + config_name + " WHERE id = ?", (peer_id,)).fetchall()
+        + config_name + " WHERE name = ?", ("user_" + peer_name,)).fetchall()
     config = get_dashboard_conf()
     if len(get_peer) == 1:
         peer = get_peer[0]
