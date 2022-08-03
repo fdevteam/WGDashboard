@@ -1207,7 +1207,7 @@ def add_peer(config_name):
                 shell=True, stderr=subprocess.STDOUT)
             os.remove(f_name)
         elif not enable_preshared_key:
-            status = subprocess.check_output(f"wg set {config_name} peer {public_key} allowed-ips {allowed_ips}",
+            status = subprocess.check_output(f"wg set {config_name} peer {public_key} persistent-keepalive 25 allowed-ips {allowed_ips}",
                                              shell=True, stderr=subprocess.STDOUT)
         status = subprocess.check_output("wg-quick save " + config_name, shell=True, stderr=subprocess.STDOUT)
         get_all_peers_data(config_name)
@@ -1241,7 +1241,7 @@ def add_peer_external(config_name):
     if check_dup_ip[0] != 0:
         return "Allowed IP already taken by another peer."
     try:
-        status = subprocess.check_output(f"wg set {config_name} peer {public_key} allowed-ips {allowed_ips}",
+        status = subprocess.check_output(f"wg set {config_name} peer {public_key} persistent-keepalive 25 allowed-ips {allowed_ips}",
                                              shell=True, stderr=subprocess.STDOUT)
         status = subprocess.check_output("wg-quick save " + config_name, shell=True, stderr=subprocess.STDOUT)
         get_all_peers_data(config_name)
